@@ -115,8 +115,20 @@ class Detector(torch.nn.Module):
         self.register_buffer("input_mean", torch.as_tensor(INPUT_MEAN))
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD))
 
-        # TODO: implement
-        pass
+        self.pool = nn.MaxPool2d(2, ceil_mode=True)
+
+        self.enc1 = ConvBlock(in_channels, 24)
+        self.enc2 = ConvBlock(24, 48)
+        self.enc3 = ConvBlock(48, 96)
+        self.bottleneck = ConvBlock(96, 192)
+
+        self.up3 = UpBlock(192, 96)
+        self.up2 = UpBlock(96, 48)
+        self.up1 = UpBlock(48, 24)
+
+        self.seg_head = nn.Conv2d(24, num_classes, kernel_size=1)
+        self.depth_head = nn.Conv2d(24, 1, kernel_size=1)
+
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -134,9 +146,18 @@ class Detector(torch.nn.Module):
         # optional: normalizes the input
         z = (x - self.input_mean[None, :, None, None]) / self.input_std[None, :, None, None]
 
-        # TODO: replace with actual forward pass
-        logits = torch.randn(x.size(0), 3, x.size(2), x.size(3))
-        raw_depth = torch.rand(x.size(0), x.size(2), x.size(3))
+        e1 = self.enc1(z)
+        e2 = self.enc2(self.pool(e1))
+        e3 = self.enc3(self.pool(e2))
+
+        z = self.bottleneck(self.pool(e3))
+
+        z = self.up3(z, e3)
+        z = self.up2(z, e2)
+        z = self.up1(z, e1)
+
+        logits = self.seg_head(z)
+        raw_depth = self.depth_head(z).sigmoid().squeeze(1)
 
         return logits, raw_depth
 
